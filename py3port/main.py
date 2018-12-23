@@ -1,30 +1,22 @@
-# Python 2/3 compatibility
-# pylint: disable=unused-import, redefined-builtin, no-name-in-module
-# noqa: F401
+# === Start Python 2/3 compatibility
 from __future__ import (absolute_import, division,
                         print_function, unicode_literals)
-from future.builtins import (ascii, bytes, chr, dict, filter, hex, input,
-                             int, map, next, oct, open, pow, range, round,
-                             str, super, zip)
-from future.builtins.disabled import (apply, cmp, coerce, execfile, file, long,
-                                      raw_input, reduce, reload, unicode,
-                                      xrange, StandardError)
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+# === End Python 2/3 compatibility
 
 import subprocess
-import sys
 import os
 import parso
-import parso_util
 import click
 
+from . import parso_util
 
-def context_tree(tree, node, filename, num=3, style=None):
+def context_tree(node, filename, num=3, style=None):
     """Print some context around node.
 
     Parameters
     ----------
-    tree : parso node
-        Full source tree.
     node : parso node
         Node to give context around.
     filename : string
@@ -71,18 +63,19 @@ def process_div(tree, filename):
 
             # Print out the context around the operator
             click.clear()
-            context_tree(tree, node, filename, num=8,
-                         style={
-                             node: {'fg':'red'},
-                             node.parent: {'fg': 'bright_white', 'bold': True}
-                         }
+            context_tree(
+                node, filename, num=8,
+                style={
+                    node: {'fg':'red'},
+                    node.parent: {'fg': 'bright_white', 'bold': True}
+                }
             )
             click.echo()
 
 
-            a = node.get_previous_sibling()
-            b = node.get_next_sibling()
-            if parso_util.is_float(a) or parso_util.is_float(b):
+            left_term = node.get_previous_sibling()
+            right_term = node.get_next_sibling()
+            if parso_util.is_float(left_term) or parso_util.is_float(right_term):
                 click.echo("Found trivial float division\n")
                 continue
 
@@ -118,7 +111,7 @@ def process_iterview(tree, filename):
 
             if not (isinstance(iterable, parso_util.FuncCall) and
                     isinstance(iterable.func, parso_util.Attribute)):
-                    continue
+                continue
 
             last_call = iterable.func.attr
 
@@ -127,11 +120,12 @@ def process_iterview(tree, filename):
 
             last_call.value = transform_dict[last_call.value]
 
-            context_tree(tree, node, filename, num=4,
-                         style={
-                             last_call: {'fg':'red'},
-                             iterable.node: {'fg': 'bright_white', 'bold': True}
-                         }
+            context_tree(
+                node, filename, num=4,
+                style={
+                    last_call: {'fg':'red'},
+                    iterable.node: {'fg': 'bright_white', 'bold': True}
+                }
             )
 
 
@@ -186,11 +180,11 @@ def process_octal(tree, filename):
 
         # Check if is an octal number
         if not (len(node.value) > 1 and '.' not in node.value and
-                    node.value[0] == '0'):
+                node.value[0] == '0'):
             continue
 
         context_tree(
-            tree, node, filename, num=2,
+            node, filename, num=2,
             style={
                 node: {'fg':'red'},
                 node.parent: {'fg': 'bright_white', 'bold': True}
@@ -214,18 +208,12 @@ def process_imports(tree, filename):
     comments and docstrings at the file head.
     """
 
-    import_txt = """### Start Python 2/3 compatibility
-# pylint: disable=unused-import, redefined-builtin, no-name-in-module
-# noqa: F401
+    import_txt = """# === Start Python 2/3 compatibility
 from __future__ import (absolute_import, division,
                         print_function, unicode_literals)
-from future.builtins import (ascii, bytes, chr, dict, filter, hex, input,
-                             int, map, next, oct, open, pow, range, round,
-                             str, super, zip)
-from future.builtins.disabled import (apply, cmp, coerce, execfile, file, long,
-                                      raw_input, reduce, reload, unicode,
-                                      xrange, StandardError)
-### End Python 2/3 compatibility
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+# === End Python 2/3 compatibility
 
 """
 
@@ -236,7 +224,7 @@ from future.builtins.disabled import (apply, cmp, coerce, execfile, file, long,
     def is_future_builtin(node):
         return ((node.type == 'import_from' and len(node.get_from_names()) == 1 and
                  node.get_from_names()[0].value in ['__future__', 'builtins']) or
-                (node.type =='simple_stmt' and is_future_builtin(node.children[0])))
+                (node.type == 'simple_stmt' and is_future_builtin(node.children[0])))
 
     # Remove all redundant __future__ and builtins imports
     orig_first = tree.children[0]  # Needed to sort out header comments below
@@ -288,7 +276,7 @@ def process_int(tree, filename):
 
         # Replace where used solely in an astype
         elif (node.parent.type == 'trailer' and
-                  node.get_previous_sibling().type == 'operator'):
+              node.get_previous_sibling().type == 'operator'):
 
             func = parso_util.augment(node.parent.parent)
 
@@ -305,9 +293,10 @@ def process_int(tree, filename):
 
 
 def preprocess(filename):
+    """Transformations before futurize called."""
 
     with open(filename, 'r') as fh:
-        tree = parso.parse(fh.read())
+        tree = parso.parse(fh.read(), version='2.7')
 
     if tree.children[0].type == 'endmarker':
         return
@@ -322,9 +311,10 @@ def preprocess(filename):
 
 
 def postprocess(filename):
+    """Transformations after futurize called."""
 
     with open(filename, 'r') as fh:
-        tree = parso.parse(fh.read())
+        tree = parso.parse(fh.read(), version='2.7')
 
     if tree.children[0].type == 'endmarker':
         return
@@ -338,6 +328,8 @@ def postprocess(filename):
 
 
 def process(filename):
+    """Port a file.
+    """
 
     click.secho("########## %s ###########" % filename, bold=True)
 
@@ -347,7 +339,9 @@ def process(filename):
 
     # Call futurize
     click.secho("Calling futurize:")
-    subprocess.check_call(("futurize -0 -u -x libfuturize.fixes.fix_division_safe -w %s" % filename).split())
+    call = ("futurize -0 -u -x libfuturize.fixes.fix_division_safe -w %s" %
+            filename)
+    subprocess.check_call(call.split())
 
     click.secho("Post processing:")
     postprocess(filename)
@@ -356,6 +350,11 @@ def process(filename):
 @click.command()
 @click.argument('files', nargs=-1)
 def main(files):
+    """Port code to Python 3 using python-future to maintain Python 2 support.
+
+    Processes the given FILES. If FILES not set, then it will process all
+    Python files beneath the current location.'
+    """
     if not len(files):
         files = []
 
