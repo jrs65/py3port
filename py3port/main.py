@@ -12,6 +12,9 @@ import click
 
 from . import parso_util
 
+# Disable warning.
+click.disable_unicode_literals_warning = True
+
 def context_tree(node, filename, num=3, style=None):
     """Print some context around node.
 
@@ -75,7 +78,8 @@ def process_div(tree, filename):
 
             left_term = node.get_previous_sibling()
             right_term = node.get_next_sibling()
-            if parso_util.is_float(left_term) or parso_util.is_float(right_term):
+            if (parso_util.is_float_walk(left_term) or
+                    parso_util.is_float_walk(right_term)):
                 click.echo("Found trivial float division\n")
                 continue
 
@@ -159,10 +163,11 @@ def process_inkeys(tree, filename):
             continue
 
         new_target = parso_util.trim_power(parso_util.trim_power(target.node, node), node)
-        if isinstance(new_target, parso_util.TempPower):
+        if isinstance(new_target, parso_util.TempNode):
             new_target = new_target.full()
 
         node.children[2] = new_target
+        new_target.parent = node
 
     click.secho("Fixing 'a in x.keys()' antipattern.", bold=True)
     click.echo("\n\n")
@@ -171,7 +176,7 @@ def process_inkeys(tree, filename):
 def process_octal(tree, filename):
     """Remove unnecessary octal literals.
 
-    There's a bunch of octal numbers that creep in from people trying ot
+    There's a bunch of octal numbers that creep in from people trying to
     zero pad integers (WRONG!) in datetimes. This gets rid of them.
     """
     for node in parso_util.pwalk(tree):
@@ -326,6 +331,18 @@ def postprocess(filename):
         fh.write(tree.get_code())
 
 
+def already_processed(filename):
+    """Return True if filename has already been processed.
+
+    Checks for the presence of the future import block.
+    """
+    test_code = "# === Start Python 2/3 compatibility"
+
+    with open(filename, 'r') as fh:
+        src = fh.read()
+
+        return test_code in src
+
 
 def process(filename):
     """Port a file.
@@ -333,6 +350,9 @@ def process(filename):
 
     click.secho("########## %s ###########" % filename, bold=True)
 
+    if already_processed(filename):
+        click.secho("File already processed. Skipping...")
+        return
 
     click.secho("Preprocessing:")
     preprocess(filename)

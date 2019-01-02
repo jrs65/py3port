@@ -20,6 +20,7 @@ class ParsoProxy(wrapt.ObjectProxy):
             self._self_achildren = wrapped.children
         else:
             self._self_achildren = None
+        self._self_aparent = None
 
     @property
     def achildren(self):
@@ -29,6 +30,13 @@ class ParsoProxy(wrapt.ObjectProxy):
     def achildren(self, value):
         self._self_achildren = value
 
+    @property
+    def aparent(self):
+        return self._self_aparent
+
+    @achildren.setter
+    def aparent(self, value):
+        self._self_aparent = value
 
 def trim_power(node, parent):
     """Remove the last entry from the power. If only one entry remains,
@@ -39,7 +47,7 @@ def trim_power(node, parent):
         raise ValueError('Node type is not power')
 
     if len(node.children) > 2:
-        trimmed_node = TempPower('power', node.children[:-1])
+        trimmed_node = TempNode('power', node.children[:-1])
         trimmed_node.parent = parent
     else:
         trimmed_node = node.children[0]
@@ -47,8 +55,8 @@ def trim_power(node, parent):
     return trimmed_node
 
 
-class TempPower(object):
-    """Duck-typed power node which doesn't reset the parents."""
+class TempNode(object):
+    """Duck-typed node which doesn't reset the parents."""
 
     def __init__(self, type_, children):
         self.children = children
@@ -59,6 +67,13 @@ class TempPower(object):
         node = parso.python.tree.PythonNode(self.type, self.children)
         node.parent = self.parent
         return node
+
+    def get_code(self):
+
+        code = ""
+        for child in self.children:
+            code += child.get_code()
+        return code
 
 class AugmentedNode(object):
 
@@ -90,6 +105,10 @@ class FuncCall(AugmentedNode):
             self.arguments = []
 
         self.achildren = [self.func] + self.arguments
+
+        for child in self.achildren:
+            child.aparent = self
+
 
     @classmethod
     def matches(cls, node):
@@ -125,6 +144,8 @@ class Attribute(AugmentedNode):
 
         self.achildren = [self.value, self.attr]
 
+        for child in self.achildren:
+            child.aparent = self
 
     @classmethod
     def matches(cls, node):
@@ -162,6 +183,8 @@ class Subscript(AugmentedNode):
 
         self.achildren = [self.value] + self.subscripts
 
+        for child in self.achildren:
+            child.aparent = self
 
     @classmethod
     def matches(cls, node):
@@ -185,6 +208,55 @@ class Subscript(AugmentedNode):
         return True
 
 
+class BinOp(AugmentedNode):
+    """Easy wrapper around an Attribute."""
+
+    def __init__(self, node):
+
+        if node.type == 'atom':
+            node = node.children[1]
+
+        super(BinOp, self).__init__(node)
+
+        self.left = augment(node.children[0])
+        self.operator = augment(node.children[1])
+
+        temp_right = TempNode(node.type, node.children[2:]) if len(node.children) > 3 else node.children[2]
+        self.right = augment(temp_right)
+
+        self.achildren = [self.left, self.operator, self.right]
+
+        for child in self.achildren:
+            child.aparent = self
+
+    @classmethod
+    def matches(cls, node):
+
+        # Any parentheses should decay
+        if node.type == 'atom':
+            if len(node.children) != 3:
+                return False
+
+            first = node.children[0]
+            last = node.children[2]
+            if not (first.type == 'operator' and first.value == '(' and
+                    last.type == 'operator' and last.value == ')'):
+                return False
+
+            return cls.matches(node.children[1])
+
+
+        if node.type not in ['arith_expr', 'term', 'power']:
+            return False
+
+        if len(node.children) < 3:
+            return False
+
+        if node.type == 'power' and (node.children[1].type != 'operator' or node.children[1].value != '**'):
+            return False
+
+        return True
+
 def augment(tree):
     """An iterator that walks over a parso tree.
 
@@ -199,7 +271,7 @@ def augment(tree):
         Node from subtree. Order is complicated.
     """
 
-    augtypes = [FuncCall, Attribute, Subscript]
+    augtypes = [FuncCall, Attribute, Subscript, BinOp]
 
     # Walk tree yielding nodes
 
@@ -293,4 +365,43 @@ def find_ancestor(node, ancestor_list):
 
 def is_float(node):
     """Return true if node represents a float."""
-    return node.type == 'number' and '.' in node.value
+    return node.type == 'number' and ('.' in node.value or 'e' in node.value)
+
+
+def is_float_walk(node):
+    """Traverse the subtree to see if there are any float literals that would
+    cause the type of node to be floating point."""
+    anode = augment(node)
+
+
+    arith_op = ['+', '-', '*', '/', '%', '**']
+    constants = ['np.pi', 'math.pi']
+    floatfunc = ['np.sin', 'np.cos', 'np.tan', 'np.sinh', 'np.cosh', 'np.tanh', 'np.exp', 'np.log', 'np.log10']
+    stack = [anode]
+
+    # Walk tree yielding nodes
+    while stack:
+        node = stack.pop()
+
+        if isinstance(node, parso.python.tree.Number) and is_float(node):
+            return True
+
+        elif isinstance(node, BinOp) and node.operator.value in arith_op:
+            stack.append(node.left)
+            stack.append(node.right)
+
+        elif isinstance(node, Attribute):
+
+            code = node.node.get_code()
+
+            if code.strip() in constants:
+                return True
+
+        elif isinstance(node, FuncCall) and isinstance(node.func, Attribute):
+
+            code = node.func.node.get_code()
+
+            if code.strip() in floatfunc:
+                return True
+
+    return False
