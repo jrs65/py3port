@@ -86,9 +86,9 @@ def process_div(tree, filename):
             click.echo("Options:")
             click.echo("[F]: Floating point division")
             click.echo("[I]: Integer division using the floor division operator")
-            div_type = click.prompt("Division type?", type=click.Choice(["F", "I"]))
+            div_type = click.prompt("Division type?", type=click.Choice(["F", "I"], case_sensitive=False))
 
-            if div_type == 'I':
+            if div_type.lower() == 'i':
                 node.value = '//'
 
 

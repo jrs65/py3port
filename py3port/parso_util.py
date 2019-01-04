@@ -365,7 +365,7 @@ def find_ancestor(node, ancestor_list):
 
 def is_float(node):
     """Return true if node represents a float."""
-    return node.type == 'number' and ('.' in node.value or 'e' in node.value)
+    return node.type == 'number' and ('.' in node.value or 'e' in node.value.lower())
 
 
 def is_float_walk(node):
@@ -376,7 +376,8 @@ def is_float_walk(node):
 
     arith_op = ['+', '-', '*', '/', '%', '**']
     constants = ['np.pi', 'math.pi']
-    floatfunc = ['np.sin', 'np.cos', 'np.tan', 'np.sinh', 'np.cosh', 'np.tanh', 'np.exp', 'np.log', 'np.log10']
+    floatfunc = ['np.sin', 'np.cos', 'np.tan', 'np.sinh', 'np.cosh', 'np.tanh',
+                 'np.exp', 'np.log', 'np.log10', 'np.sqrt', 'float']
     stack = [anode]
 
     # Walk tree yielding nodes
@@ -397,9 +398,14 @@ def is_float_walk(node):
             if code.strip() in constants:
                 return True
 
-        elif isinstance(node, FuncCall) and isinstance(node.func, Attribute):
+        elif isinstance(node, FuncCall):
 
-            code = node.func.node.get_code()
+            if isinstance(node.func, Attribute):
+                code = node.func.node.get_code()
+            elif isinstance(node.func, parso.python.tree.Name):
+                code = node.func.get_code()
+            else:
+                continue
 
             if code.strip() in floatfunc:
                 return True
