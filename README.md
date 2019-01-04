@@ -156,4 +156,29 @@ a = np.array([u'hello'])  # h5py incompatible
 b = a.astype(dt)  # h5py compatible
 ```
 
+## Writing new code with Python 2/3 support
+
+There is lots of additional advice in the [Python Future
+documentation](http://python-future.org/compatible_idioms.html).
+
+The first and foremost thing you should do to write code that supports both
+Python 2 and 3 is to add the following block at the top of the file (just below
+any module level docstrings). Please include the leading and trailing comment
+lines to make it easy to find and remove in the future.
+```python
+# === Start Python 2/3 compatibility
+from __future__ import (absolute_import, division,
+                        print_function, unicode_literals)
+from future.builtins import *  # noqa  pylint: disable=W0401, W0614
+from future.builtins.disabled import *  # noqa  pylint: disable=W0401, W0614
+# === End Python 2/3 compatibility
+```
+This allows you to write Python 3 style code which will run in Python 2.7 (e.g.
+print as a function, float and floor division etc). It will also disable any
+builtins that have been removed from Python 3 (i.e. they now won't work on
+Python 2 either).
+
+If you require any code in the standard library that has changed or been moved,
+you may want to install aliases for the new locations. See
+[here](http://python-future.org/imports.html#aliased-imports).
 
